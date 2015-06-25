@@ -1,0 +1,846 @@
+From 44a6dd2add793a4565fff4dffbea7bdcbfd560a0 Mon Sep 17 00:00:00 2001
+From: jude <jude.lee@atmel.com>
+Date: Tue, 23 Jun 2015 17:21:57 +0900
+Subject: [PATCH] patch
+
+---
+ HOWTO-Debian.md                 | 149 -----------------------------
+ HOWTO-Poky.md                   |   4 -
+ Makefile                        |  11 +++
+ README.md                       |  42 +++++----
+ example-ledbtn/Makefile         |  17 ----
+ example-ledbtn/Makefile.lib     | 102 --------------------
+ example-ledbtn/README.md        |  29 ------
+ example-ledbtn/sama5d3-ledbtn.c | 203 ----------------------------------------
+ sama5d3-ledbtn.c                | 203 ++++++++++++++++++++++++++++++++++++++++
+ 9 files changed, 238 insertions(+), 522 deletions(-)
+ delete mode 100644 HOWTO-Debian.md
+ delete mode 100644 HOWTO-Poky.md
+ create mode 100644 Makefile
+ delete mode 100644 example-ledbtn/Makefile
+ delete mode 100644 example-ledbtn/Makefile.lib
+ delete mode 100644 example-ledbtn/README.md
+ delete mode 100644 example-ledbtn/sama5d3-ledbtn.c
+ create mode 100644 sama5d3-ledbtn.c
+
+diff --git a/HOWTO-Debian.md b/HOWTO-Debian.md
+deleted file mode 100644
+index 3ad9786..0000000
+--- a/HOWTO-Debian.md
++++ /dev/null
+@@ -1,149 +0,0 @@
+-Debian Setup Instructions
+-=========================
+-
+-This document describes how to get Debian and a simple C-based PubNub
+-demo that flashes an LED running on your SAMA5D3 Xplained development
+-board.
+-
+-Contrary to the Poky system, you can develop, prototype and build your
+-PubNub-based software directly on the ARM board; it has plenty enough
+-RAM and CPU power to compile smaller software packages.
+-
+-
+-SD Card Setup
+--------------
+-
+-The Debian system is not installed to the internal NAND flash but to an
+-SD card; any normal SD card should do, use at least 1GB sized card.
+-
+-You will need a UNIXy system on another computer with SD card drive
+-to set up the card; in an extreme case, even the Poky build flashed
+-on your Xplained board in the factory could suffice, but we will not
+-describe the process in detail.
+-
+-In the following, we assume a Linux PC system.  If you don't have
+-a dedicated SD drive, some microSD cards come with an SD adapter
+-*and* USB adapter.
+-
+-Note that these instructions are heavily based on a more technical howto
+-
+-	https://eewiki.net/display/linuxonarm/ATSAMA5D3+Xplained
+-
+-that you can follow to also build your own bootloader and kernel.
+-
+-## Partitioning SD Card
+-
+-Typical SD cards have just a single partition that holds all the data.
+-In order to create ARM-bootable SD card, we will need two partitions;
+-a 48MB boot FAT partition (type 0xE) that holds the bootloader and Linux
+-kernel, and an ext4 partition (type 0x83) covering the rest of the
+-device that holds the Debian root filesystem.
+-
+-We will assume that the SD card device name is /dev/mmcblk0 - it can
+-also be something like /dev/sdx or such.  The `lsblk` tool can help
+-you identify the device name.  Be careful, using the wrong device name
+-can cause overwriting your other disk drives!
+-
+-Cut'n'paste the following commands turn by turn to set up the SD card
+-partitions:
+-
+-	export DISK=/dev/mmcblk0
+-	sudo dd if=/dev/zero of=${DISK} bs=1M count=50
+-	sudo sfdisk --in-order --Linux --unit M ${DISK} <<-__EOF__
+-	1,48,0xE,*
+-	,,,-
+-	__EOF__
+-	DISKP=$DISK
+-	case ${DISKP} in *[0-9]) DISKP=${DISKP}p;; esac
+-
+-## Setup Linux Boot Partition
+-
+-We have already prepared a boot partition that you can simply flash
+-on your SD card.  Follow the eewiki.net howto to build it from scratch.
+-
+-	wget -c http://pasky.or.cz/dev/pubnub/SAMA5D3X-boot.img.xz
+-	xz -d SAMA5D3X-boot.img.xz
+-	sudo dd if=SAMA5D3X-boot.img of=${DISKP}1 bs=1M
+-
+-## Setup Debian Root Partition
+-
+-We will use the eewiki-provided Debian root filesystem:
+-
+-	wget -c https://rcn-ee.net/deb/minfs/wheezy/debian-7.5-minimal-armhf-2014-07-07.tar.xz
+-	tar xf debian-7.5-minimal-armhf-2014-07-07.tar.xz
+-
+-We provide an additional set of files that covers kernel-specific
+-data and some config file updates:
+-
+-	wget -c http://pasky.or.cz/dev/pubnub/SAMA5D3X-files.tar.xz
+-
+-Now, we will store the data on the SD card:
+-
+-	sudo mkfs.ext4 ${DISKP}2 -L rootfs
+-	mount ${DISKP}2 /mnt
+-	sudo tar xfvp ./*-*-*-armhf-*/armhf-rootfs-*.tar -C /mnt
+-	sudo tar xfvp SAMA5D3X-files.tar.xz -C /mnt
+-	umount /mnt
+-	sync
+-
+-## Booting Up
+-
+-At this point, we can insert the SD card in the development board
+-and power up.  With SD card present, the board will automatically
+-select it for boot instead of the internal flash.
+-
+-Unfortunately, the serial console doesn't seem to work during boot;
+-however, after boot is finished, a login prompt will appear on the
+-serial console (should appear as /dev/ttyACM0 if you are powering
+-the board over USB from a Linux PC).
+-
+-To login over a network, after about 30 seconds after power-on,
+-the system will request an IP address over DHCP and after about
+-further 90 seconds, ssh login will become available.  If DHCP is
+-inconvenient in your setting, you can configure a static IP address
+-in etc/network/interfaces on the Debian root filesystem.
+-
+-Use root:root or debian:temppwd to login.
+-
+-
+-PubNub Setup
+-------------
+-
+-In all the following steps, we assume you are logged in on the board
+-(we recommend to login as the `debian` user).
+-
+-First, let's install git and basic C build environment:
+-
+-	sudo apt-get install git build-essential
+-
+-Now, let's clone the PubNub C SDK:
+-
+-	git clone https://github.com/pubnub/c
+-	cd c
+-
+-As described in its README, we will install its dependencies:
+-
+-	sudo apt-get install libevent-dev libjson0-dev libcurl4-openssl-dev libssl-dev
+-
+-Now, we can build and install the SDK:
+-
+-	make
+-	sudo make install
+-
+-And let's try some PubNub client example:
+-
+-	cd examples/libevent-sub
+-	make
+-	./example-libevent-sub
+-
+-(and hit the 'a' key now)
+-
+-You can also try a board-specific PubNub example that will connect
+-the LEDs and user button of this board to a PubNub channel:
+-
+-	cd ~
+-	git clone https://github.com/pubnub/sama5d3
+-	cd sama5d3/example-ledbtn
+-	less README.md
+-
+-...and follow the instructions in the example-specific README.
+diff --git a/HOWTO-Poky.md b/HOWTO-Poky.md
+deleted file mode 100644
+index 9b0014e..0000000
+--- a/HOWTO-Poky.md
++++ /dev/null
+@@ -1,4 +0,0 @@
+-Poky Setup Instructions
+-=======================
+-
+-Coming soon!
+diff --git a/Makefile b/Makefile
+new file mode 100644
+index 0000000..ef2e111
+--- /dev/null
++++ b/Makefile
+@@ -0,0 +1,11 @@
++all: sama5d3-ledbtn
++
++sama5d3-ledbtn: sama5d3-ledbtn.o
++
++clean:
++	rm -f *.o sama5d3-ledbtn
++
++install:
++	-@if [ ! -d $(DESTDIR)$(bindir)   ]; then mkdir -p $(DESTDIR)$(bindir); fi
++	cp sama5d3-ledbtn $(DESTDIR)$(bindir)
++	chmod 775 $(DESTDIR)$(bindir)/sama5d3-ledbtn
+diff --git a/README.md b/README.md
+index 8dface4..0b6c5a9 100644
+--- a/README.md
++++ b/README.md
+@@ -1,23 +1,29 @@
+-sama5d3
+-=======
++SAMA5D3 Example Pubnub Client
++=============================
+ 
+-PubNub for Atmel's SAMA5D3 Usage Notes and Client SDK Examples
++This client is a fairly trivial C PubNub app that connects your board
++to the world via a PubNub channel:
+ 
+-The SAMA5D3 ARM processor is capable of running Linux and transitively
+-many of our SDKs.  In our instructions, we will focus primarily on
+-setting up the C SDK.
++  * Messages are sent whenever the user button (near the ethernet connectors)
++    is pressed
++  * According to received messages, the blue and red LEDs can be switched
+ 
+-We document setup of two Linux platforms on the "SAMA5D3 Xplained"
+-development board - this should also serve as a good base for any
+-other SAMA5D3-based Linux platforms:
++This is implemented using the libevent library and using the standard Linux
++kernel hardware interfaces - ``/dev/input/event0`` (for button input) and
++``/sys/devices/leds/leds/d*/brightness`` (for LED flashing).
+ 
+-  * [Debian](HOWTO-Debian.md) is a versatile, extremely popular Linux
+-    distribution that offers package management and comfortable
+-    development environment on all platforms from big iron to embedded.
+-    Debian boots from an SD card.
++See the comment near the top of ``sama5d3-ledbtn.c`` for details on the
++PubNub message format.  To get it running:
+ 
+-  * [Poky](HOWTO-Poky.md) is an industry standard for cross-compiling
+-    the whole Linux system, from source and custom tailored to your
+-    hardware and specific needs.  Development is more involved but
+-    there is minimum overhead in the final product.  Poky runs from
+-    the internal NAND flash.
++  * Run ``make`` to build the C program.
++
++  * The first time after booting up, you need to give your user access
++    permissions to the device files that interface the respective hardware:
++
++	sudo chmod a+rw /sys/devices/leds/leds/d*/brightness
++	sudo chmod a+r /dev/input/event0
++
++  * To execute the program, run: ``./sama5d3-ledbtn``
++
++  * Go to the PubNub web console, subscribe to the ``sama5d3`` channel
++    and start playing around. :-)
+diff --git a/example-ledbtn/Makefile b/example-ledbtn/Makefile
+deleted file mode 100644
+index 7aefdfb..0000000
+--- a/example-ledbtn/Makefile
++++ /dev/null
+@@ -1,17 +0,0 @@
+-CUSTOM_CFLAGS=-Wall -ggdb3 -O3
+-SYS_CFLAGS=-std=gnu99 `pkg-config --cflags libpubnub json`
+-LIBS=`pkg-config --libs libpubnub json`
+-
+-OBJS=sama5d3-ledbtn.o
+-
+-all: sama5d3-ledbtn
+-
+-sama5d3-ledbtn: sama5d3-ledbtn.o
+-	$(call cmd,link)
+-
+-clean:
+-	rm -f *.o sama5d3-ledbtn
+-
+-install:
+-
+--include Makefile.lib
+diff --git a/example-ledbtn/Makefile.lib b/example-ledbtn/Makefile.lib
+deleted file mode 100644
+index 65796c5..0000000
+--- a/example-ledbtn/Makefile.lib
++++ /dev/null
+@@ -1,102 +0,0 @@
+-# 'There's more than one passage here,' he whispered with an effort: it seemed
+-# hard to make his breath give any sound. `It's as orc-like a place as ever
+-# there could be! '
+-
+-# (c) Petr Baudis <pasky@ucw.cz> 2012
+-# This file is in public domain, or under the MIT licence in countries
+-# where software cannot be put in public domain.
+-
+-
+-### The build commands and verbosity
+-
+-# If we are verbose, we will show commands prefixed by $(Q) (which acts as
+-# @ in the non-verbose mode), and we will show the "real" cmds instead of
+-# their quiet versions (which are used in the non-verbose mode).
+-# Inspired by the Linux kernel build system.
+-ifdef V
+-	Q =
+-	quiet =
+-	mquiet = masq_
+-else
+-	Q = @
+-	quiet = quiet_
+-	mquiet = quiet_
+-endif
+-
+-# Show the command (quiet or non-quiet version based on the assignment
+-# just above) and then execute it.
+-ncmd = $(if $($(quiet)cmd_$(1)),echo $($(quiet)cmd_$(1)) &&) $(cmd_$(1))
+-cmd = @$(if $($(quiet)cmd_$(1)),echo $($(quiet)cmd_$(1)) &&) $(cmd_$(1))
+-mcmd = @$(if $($(mquiet)cmd_$(1)),echo $($(mquiet)cmd_$(1)) &&) $(cmd_$(1))
+-
+-quiet_cmd_compile = '[CC]   $<'
+- masq_cmd_compile = $(COMPILE) -c $<
+-      cmd_compile = $(COMPILE) -Wp,-MD,.deps/$(*F).pp -c $<
+-
+-quiet_cmd_cxxcompile = '[CXX]   $<'
+- masq_cmd_cxxcompile = $(CXXCOMPILE) -c $<
+-      cmd_cxxcompile = $(CXXCOMPILE) -Wp,-MD,.deps/$(*F).pp -c $<
+-
+-quiet_cmd_archive = '[AR]   $@'
+-      cmd_archive = $(AR) r $@ $^
+-
+-   quiet_cmd_link = '[LINK] $@'
+-         cmd_link = $(LINK) -o $@ $^ $(LIBS)
+-
+-quiet_cmd_cxxlink = '[CXXLINK] $@'
+-      cmd_cxxlink = $(CXXLINK) -o $@ $^ $(LIBS)
+-
+-# Recursive make
+-quiet_cmd_recmake = "[MAKE $$target]   $$subdir"
+-      cmd_recmake = $(MAKE) -C $$subdir $$target
+-
+-
+-
+-### Internal build rules
+-
+-unexport CFLAGS CXXFLAGS
+-CFLAGS += $(CUSTOM_CFLAGS) $(XCFLAGS) $(INCLUDES) $(SYS_CFLAGS)
+-COMPILE = $(CC) $(CFLAGS)
+-CXXFLAGS += $(CUSTOM_CXXFLAGS) $(XCXXFLAGS) $(INCLUDES) $(SYS_CXXFLAGS)
+-CXXCOMPILE = $(CXX) $(CXXFLAGS)
+-LINK = $(CC) $(LDFLAGS) $(XLDFLAGS)
+-CXXLINK = $(CXX) $(LDFLAGS) $(XLDFLAGS)
+-INSTALL = install
+-
+-DEP_FILES_1 = $(foreach src,$(OBJS),.deps/$(src))
+-DEP_FILES = $(DEP_FILES_1:%.o=%.P)
+-
+-DEPS_MAGIC := $(shell mkdir .deps > /dev/null 2>&1 || :)
+-
+-ifdef DEP_FILES
+--include $(DEP_FILES)
+-endif
+-
+-%.o: %.c
+-	$(call mcmd,compile)
+-	@-cp .deps/$(*F).pp .deps/$(*F).P; \
+-		tr ' ' '\012' < .deps/$(*F).pp \
+-			| sed -e 's/^\\$$//' -e '/^$$/ d' -e '/:$$/ d' -e 's/$$/ :/' \
+-			>> .deps/$(*F).P; \
+-		rm .deps/$(*F).pp
+-
+-%.o: %.cpp
+-	$(call mcmd,cxxcompile)
+-	@-cp .deps/$(*F).pp .deps/$(*F).P; \
+-		tr ' ' '\012' < .deps/$(*F).pp \
+-			| sed -e 's/^\\$$//' -e '/^$$/ d' -e '/:$$/ d' -e 's/$$/ :/' \
+-			>> .deps/$(*F).P; \
+-		rm .deps/$(*F).pp
+-
+-%.a:
+-	$(call cmd,archive)
+-
+-
+-# Recursion:
+-
+-.PHONY: all-recursive clean-recursive install-recursive
+-all-recursive clean-recursive install-recursive:
+-	+@target=`echo $@ | sed s/-recursive//`; \
+-	for subdir in $(SUBDIRS); do \
+-		$(call ncmd,recmake) || exit 1; \
+-	done
+diff --git a/example-ledbtn/README.md b/example-ledbtn/README.md
+deleted file mode 100644
+index 0b6c5a9..0000000
+--- a/example-ledbtn/README.md
++++ /dev/null
+@@ -1,29 +0,0 @@
+-SAMA5D3 Example Pubnub Client
+-=============================
+-
+-This client is a fairly trivial C PubNub app that connects your board
+-to the world via a PubNub channel:
+-
+-  * Messages are sent whenever the user button (near the ethernet connectors)
+-    is pressed
+-  * According to received messages, the blue and red LEDs can be switched
+-
+-This is implemented using the libevent library and using the standard Linux
+-kernel hardware interfaces - ``/dev/input/event0`` (for button input) and
+-``/sys/devices/leds/leds/d*/brightness`` (for LED flashing).
+-
+-See the comment near the top of ``sama5d3-ledbtn.c`` for details on the
+-PubNub message format.  To get it running:
+-
+-  * Run ``make`` to build the C program.
+-
+-  * The first time after booting up, you need to give your user access
+-    permissions to the device files that interface the respective hardware:
+-
+-	sudo chmod a+rw /sys/devices/leds/leds/d*/brightness
+-	sudo chmod a+r /dev/input/event0
+-
+-  * To execute the program, run: ``./sama5d3-ledbtn``
+-
+-  * Go to the PubNub web console, subscribe to the ``sama5d3`` channel
+-    and start playing around. :-)
+diff --git a/example-ledbtn/sama5d3-ledbtn.c b/example-ledbtn/sama5d3-ledbtn.c
+deleted file mode 100644
+index 9751d19..0000000
+--- a/example-ledbtn/sama5d3-ledbtn.c
++++ /dev/null
+@@ -1,203 +0,0 @@
+-#include <fcntl.h>
+-#include <stdlib.h>
+-#include <stdio.h>
+-#include <string.h>
+-#include <unistd.h>
+-
+-#include <event2/event.h>
+-#include <linux/input.h>
+-
+-#include <json.h>
+-
+-#include "pubnub.h"
+-#include "pubnub-libevent.h"
+-
+-
+-/* In this PubNub client, we subscribe to the "sama5d3" channel (by default
+- * using demo/demo pub/sub keys).
+- *
+- * Whenever a user button is pressed, we will fire up a message saying
+- * {"btn": 1}; when it is released, we send {"btn": 0}.
+- *
+- * When we receive e.g. the message {"leds": {"3": 1, "2": 0}}, we turn on
+- * the red LED (#3) and turn off the blue LED (#2). */
+-
+-const static char chname[] = "sama5d3";
+-
+-
+-static void
+-check_led(struct json_object *leds, const char *lednum)
+-{
+-	/* Load value for the LED, if it was specified. */
+-	json_object *value = json_object_object_get(leds, lednum);
+-	if (!value || !json_object_is_type(value, json_type_int))
+-		return;
+-	int val = json_object_get_int(value);
+-	if (val < 0 || val > 255)
+-		return; // out of range
+-
+-	/* Set the LED value in hardware. */
+-	printf("led %s set to %d\n", lednum, val);
+-	char filename[64];
+-	snprintf(filename, sizeof(filename), "/sys/devices/leds/leds/d%s/brightness", lednum);
+-	FILE *f = fopen(filename, "w");
+-	if (!f) {
+-		perror(filename);
+-		exit(EXIT_FAILURE);
+-	}
+-	fprintf(f, "%d", val);
+-	fclose(f);
+-}
+-
+-static void
+-process_message(struct pubnub *p, struct json_object *msg)
+-{
+-	json_object *leds = json_object_object_get(msg, "leds");
+-	if (!leds || !json_object_is_type(leds, json_type_object))
+-		return;
+-	check_led(leds, "2");
+-	check_led(leds, "3");
+-}
+-
+-static void
+-subscribe_received(struct pubnub *p, enum pubnub_res result, char **channels, struct json_object *msg, void *ctx_data, void *call_data)
+-{
+-	/* ctx_data is (struct pubnub_libevent *) */
+-	/* call_data is NULL as that's what we passed to pubnub_subscribe_multi() */
+-
+-	if (result == PNR_CANCELLED) {
+-		free(channels);
+-		return;
+-	}
+-
+-	if (result != PNR_OK)
+-		/* This must be something fatal, we retry on recoverable
+-		 * errors. */
+-		exit(EXIT_FAILURE);
+-
+-	if (json_object_array_length(msg) == 0) {
+-		printf("pubnub subscribe ok, no news\n");
+-	} else {
+-		for (int i = 0; i < json_object_array_length(msg); i++) {
+-			json_object *msg1 = json_object_array_get_idx(msg, i);
+-			printf("pubnub subscribe [%s]: %s\n", channels[i], json_object_get_string(msg1));
+-			process_message(p, msg1);
+-			free(channels[i]);
+-		}
+-	}
+-	free(channels);
+-
+-	/* Loop. */
+-	pubnub_subscribe(p, NULL, -1, subscribe_received, NULL);
+-}
+-
+-
+-/* The "button pressed" callback chain. */
+-
+-static struct event *inputev;
+-
+-static void
+-publish_done(struct pubnub *p, enum pubnub_res result, struct json_object *msg, void *ctx_data, void *call_data)
+-{
+-	/* ctx_data is (struct pubnub_libevent *) */
+-	/* call_data is NULL as that's what we passed to pubnub_publish() */
+-
+-	/* Start listening for input events again. */
+-	event_add(inputev, NULL);
+-
+-	if (result != PNR_OK)
+-		/* An unrecoverable error, we just terminate with an
+-		 * error code. Since pubnub_error_policy()'s print is
+-		 * true by default, an explanation has already been
+-		 * written to stderr and we tried to retry as well. */
+-		exit(EXIT_FAILURE);
+-
+-	printf("pubnub publish ok\n");
+-}
+-
+-static void
+-read_input(int fd, short kind, void *userp)
+-{
+-	struct pubnub *p = userp;
+-
+-	struct input_event inpev;
+-	int n = read(fd, &inpev, sizeof(inpev));
+-	if (n == -1) {
+-		perror("read from /dev/input");
+-		exit(EXIT_FAILURE);
+-	}
+-	if (n < sizeof(inpev)) {
+-		fprintf(stderr, "short read of %d < %zd bytes\n", n, sizeof(inpev));
+-		exit(EXIT_FAILURE);
+-	}
+-
+-	/* Install input-utils and run:
+-	 *   input-events /dev/input/event0
+-	 * to easily watch the input events generated by the button. */
+-	/* 0x104 (BTN_4) is the code generated by the userbutton GPIO. */
+-	if (inpev.type == EV_SYN)
+-		return; // ignore without warning
+-	if (inpev.type != EV_KEY || inpev.code != 0x104) {
+-		fprintf(stderr, "Ignoring unknown input event %x, %x, %u\n",
+-			inpev.type, inpev.code, inpev.value);
+-		return;
+-	}
+-	int value = inpev.value;
+-
+-	/* When publish is already in progress, we cannot issue a second
+-	 * publish in parallel.  Therefore, whenever we issue a publish,
+-	 * we stop monitoring the inputev file until the publish is finished.
+-	 * The events received meantime will simply queue up in the file
+-	 * descriptor (up to at least 8 physical button presses; see
+-	 * EVDEV_BUF_PACKETS in kernel drivers/input/evdev.c), so we typically
+-	 * should not lose any events. */
+-	/* But in general, PubNub is not suitable for publishing a *flood*
+-	 * of messages many times per second (it will actually tend to rate
+-	 * limit you) so if a user is prone to press a button very frequently
+-	 * you should batch the events up in a single message or throw away
+-	 * some of the presses. */
+-	event_del(inputev);
+-
+-	/* Generate a PubNub notification. */
+-	json_object *msg = json_object_new_object();
+-	json_object_object_add(msg, "btn", json_object_new_int(value));
+-
+-	printf("pubnub publishing: %s\n", json_object_get_string(msg));
+-	pubnub_publish(p, chname, msg, -1, publish_done, NULL);
+-	json_object_put(msg);
+-}
+-
+-
+-int
+-main(void)
+-{
+-	/* Set up the libevent library. */
+-	struct event_base *evbase = event_base_new();
+-
+-	/* Set up the PubNub library, with a single subscription context
+-	 * for receiving messages and a publish context for sending messges,
+-	 * using the libevent backend for event handling. */
+-	struct pubnub *psub = pubnub_init("demo", "demo", &pubnub_libevent_callbacks, pubnub_libevent_init(evbase));
+-	struct pubnub *ppub = pubnub_init("demo", "demo", &pubnub_libevent_callbacks, pubnub_libevent_init(evbase));
+-
+-	/* Subscribe to our channel. */
+-	printf("Subscribing to channel '%s'\n", chname);
+-	pubnub_subscribe(psub, chname, -1, subscribe_received, NULL);
+-
+-	/* Start listening for input events. */
+-	int inputfd = open("/dev/input/event0", O_RDONLY);
+-	if (inputfd < 0) {
+-		perror("/dev/input/event0");
+-		exit(EXIT_FAILURE);
+-	}
+-	inputev = event_new(evbase, inputfd, EV_READ | EV_PERSIST, read_input, ppub);
+-	event_add(inputev, NULL);
+-
+-	/* Start the event loop. */
+-	event_base_dispatch(evbase);
+-
+-	/* We should never reach here. */
+-	pubnub_done(ppub);
+-	pubnub_done(psub);
+-	return EXIT_SUCCESS;
+-}
+diff --git a/sama5d3-ledbtn.c b/sama5d3-ledbtn.c
+new file mode 100644
+index 0000000..9751d19
+--- /dev/null
++++ b/sama5d3-ledbtn.c
+@@ -0,0 +1,203 @@
++#include <fcntl.h>
++#include <stdlib.h>
++#include <stdio.h>
++#include <string.h>
++#include <unistd.h>
++
++#include <event2/event.h>
++#include <linux/input.h>
++
++#include <json.h>
++
++#include "pubnub.h"
++#include "pubnub-libevent.h"
++
++
++/* In this PubNub client, we subscribe to the "sama5d3" channel (by default
++ * using demo/demo pub/sub keys).
++ *
++ * Whenever a user button is pressed, we will fire up a message saying
++ * {"btn": 1}; when it is released, we send {"btn": 0}.
++ *
++ * When we receive e.g. the message {"leds": {"3": 1, "2": 0}}, we turn on
++ * the red LED (#3) and turn off the blue LED (#2). */
++
++const static char chname[] = "sama5d3";
++
++
++static void
++check_led(struct json_object *leds, const char *lednum)
++{
++	/* Load value for the LED, if it was specified. */
++	json_object *value = json_object_object_get(leds, lednum);
++	if (!value || !json_object_is_type(value, json_type_int))
++		return;
++	int val = json_object_get_int(value);
++	if (val < 0 || val > 255)
++		return; // out of range
++
++	/* Set the LED value in hardware. */
++	printf("led %s set to %d\n", lednum, val);
++	char filename[64];
++	snprintf(filename, sizeof(filename), "/sys/devices/leds/leds/d%s/brightness", lednum);
++	FILE *f = fopen(filename, "w");
++	if (!f) {
++		perror(filename);
++		exit(EXIT_FAILURE);
++	}
++	fprintf(f, "%d", val);
++	fclose(f);
++}
++
++static void
++process_message(struct pubnub *p, struct json_object *msg)
++{
++	json_object *leds = json_object_object_get(msg, "leds");
++	if (!leds || !json_object_is_type(leds, json_type_object))
++		return;
++	check_led(leds, "2");
++	check_led(leds, "3");
++}
++
++static void
++subscribe_received(struct pubnub *p, enum pubnub_res result, char **channels, struct json_object *msg, void *ctx_data, void *call_data)
++{
++	/* ctx_data is (struct pubnub_libevent *) */
++	/* call_data is NULL as that's what we passed to pubnub_subscribe_multi() */
++
++	if (result == PNR_CANCELLED) {
++		free(channels);
++		return;
++	}
++
++	if (result != PNR_OK)
++		/* This must be something fatal, we retry on recoverable
++		 * errors. */
++		exit(EXIT_FAILURE);
++
++	if (json_object_array_length(msg) == 0) {
++		printf("pubnub subscribe ok, no news\n");
++	} else {
++		for (int i = 0; i < json_object_array_length(msg); i++) {
++			json_object *msg1 = json_object_array_get_idx(msg, i);
++			printf("pubnub subscribe [%s]: %s\n", channels[i], json_object_get_string(msg1));
++			process_message(p, msg1);
++			free(channels[i]);
++		}
++	}
++	free(channels);
++
++	/* Loop. */
++	pubnub_subscribe(p, NULL, -1, subscribe_received, NULL);
++}
++
++
++/* The "button pressed" callback chain. */
++
++static struct event *inputev;
++
++static void
++publish_done(struct pubnub *p, enum pubnub_res result, struct json_object *msg, void *ctx_data, void *call_data)
++{
++	/* ctx_data is (struct pubnub_libevent *) */
++	/* call_data is NULL as that's what we passed to pubnub_publish() */
++
++	/* Start listening for input events again. */
++	event_add(inputev, NULL);
++
++	if (result != PNR_OK)
++		/* An unrecoverable error, we just terminate with an
++		 * error code. Since pubnub_error_policy()'s print is
++		 * true by default, an explanation has already been
++		 * written to stderr and we tried to retry as well. */
++		exit(EXIT_FAILURE);
++
++	printf("pubnub publish ok\n");
++}
++
++static void
++read_input(int fd, short kind, void *userp)
++{
++	struct pubnub *p = userp;
++
++	struct input_event inpev;
++	int n = read(fd, &inpev, sizeof(inpev));
++	if (n == -1) {
++		perror("read from /dev/input");
++		exit(EXIT_FAILURE);
++	}
++	if (n < sizeof(inpev)) {
++		fprintf(stderr, "short read of %d < %zd bytes\n", n, sizeof(inpev));
++		exit(EXIT_FAILURE);
++	}
++
++	/* Install input-utils and run:
++	 *   input-events /dev/input/event0
++	 * to easily watch the input events generated by the button. */
++	/* 0x104 (BTN_4) is the code generated by the userbutton GPIO. */
++	if (inpev.type == EV_SYN)
++		return; // ignore without warning
++	if (inpev.type != EV_KEY || inpev.code != 0x104) {
++		fprintf(stderr, "Ignoring unknown input event %x, %x, %u\n",
++			inpev.type, inpev.code, inpev.value);
++		return;
++	}
++	int value = inpev.value;
++
++	/* When publish is already in progress, we cannot issue a second
++	 * publish in parallel.  Therefore, whenever we issue a publish,
++	 * we stop monitoring the inputev file until the publish is finished.
++	 * The events received meantime will simply queue up in the file
++	 * descriptor (up to at least 8 physical button presses; see
++	 * EVDEV_BUF_PACKETS in kernel drivers/input/evdev.c), so we typically
++	 * should not lose any events. */
++	/* But in general, PubNub is not suitable for publishing a *flood*
++	 * of messages many times per second (it will actually tend to rate
++	 * limit you) so if a user is prone to press a button very frequently
++	 * you should batch the events up in a single message or throw away
++	 * some of the presses. */
++	event_del(inputev);
++
++	/* Generate a PubNub notification. */
++	json_object *msg = json_object_new_object();
++	json_object_object_add(msg, "btn", json_object_new_int(value));
++
++	printf("pubnub publishing: %s\n", json_object_get_string(msg));
++	pubnub_publish(p, chname, msg, -1, publish_done, NULL);
++	json_object_put(msg);
++}
++
++
++int
++main(void)
++{
++	/* Set up the libevent library. */
++	struct event_base *evbase = event_base_new();
++
++	/* Set up the PubNub library, with a single subscription context
++	 * for receiving messages and a publish context for sending messges,
++	 * using the libevent backend for event handling. */
++	struct pubnub *psub = pubnub_init("demo", "demo", &pubnub_libevent_callbacks, pubnub_libevent_init(evbase));
++	struct pubnub *ppub = pubnub_init("demo", "demo", &pubnub_libevent_callbacks, pubnub_libevent_init(evbase));
++
++	/* Subscribe to our channel. */
++	printf("Subscribing to channel '%s'\n", chname);
++	pubnub_subscribe(psub, chname, -1, subscribe_received, NULL);
++
++	/* Start listening for input events. */
++	int inputfd = open("/dev/input/event0", O_RDONLY);
++	if (inputfd < 0) {
++		perror("/dev/input/event0");
++		exit(EXIT_FAILURE);
++	}
++	inputev = event_new(evbase, inputfd, EV_READ | EV_PERSIST, read_input, ppub);
++	event_add(inputev, NULL);
++
++	/* Start the event loop. */
++	event_base_dispatch(evbase);
++
++	/* We should never reach here. */
++	pubnub_done(ppub);
++	pubnub_done(psub);
++	return EXIT_SUCCESS;
++}
+-- 
+1.9.1
+

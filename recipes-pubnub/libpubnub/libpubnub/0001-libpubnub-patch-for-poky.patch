@@ -1,0 +1,97 @@
+From f8d4161cede7b8ecce3fe4cd1f24614a5f72211e Mon Sep 17 00:00:00 2001
+From: jude <jude.lee@atmel.com>
+Date: Tue, 23 Jun 2015 17:42:57 +0900
+Subject: [PATCH] patch for poky
+
+---
+ Makefile           |  2 +-
+ libpubnub/Makefile | 54 +++++++++++++++++++++++++++++-------------------------
+ 2 files changed, 30 insertions(+), 26 deletions(-)
+
+diff --git a/Makefile b/Makefile
+index b2bb600..75c5de8 100644
+--- a/Makefile
++++ b/Makefile
+@@ -7,7 +7,7 @@ export PREFIX LIBDIR INCDIR
+ 
+ # We ignore examples/, they shall not be built by default and
+ # their makefiles depend on libpubnub already being installed anyway.
+-SUBDIRS=libpubnub libpubnub-cpp
++SUBDIRS=libpubnub
+ 
+ all: all-recursive
+ 
+diff --git a/libpubnub/Makefile b/libpubnub/Makefile
+index 6721196..af1cc04 100644
+--- a/libpubnub/Makefile
++++ b/libpubnub/Makefile
+@@ -1,37 +1,41 @@
+-# Compile using `make XCFLAGS=-DDEBUG` to enable debugging code.
+-CUSTOM_CFLAGS=-Wall -ggdb3 -O3
+-SOFLAGS=-fPIC -fvisibility=internal
+-SYS_CFLAGS=-std=gnu99 $(SOFLAGS) -I. `pkg-config --cflags json libcurl libcrypto libevent`
+-LIBS=`pkg-config --libs json libcurl libcrypto libevent`
+-LDFLAGS=$(SOFLAGS) -shared -Wl,-soname,libpubnub.so.1
++libdir =/usr/lib
++includedir =/usr/include
++pkgconfigdir = ${libdir}/pkgconfig
++
++SHAREDLIB=libpubnub.so
++SHAREDLIBV=libpubnub.so.1.0
++SHAREDLIBM=libpubnub.so.1
+ 
+ OBJS=pubnub.o pubnub-sync.o pubnub-libevent.o crypto.o
+ 
+ all: libpubnub.so.1.0 libpubnub.pc
+ 
+ libpubnub.so.1.0: $(OBJS)
+-	$(CC) $(LDFLAGS) -o $@ $^ $(LIBS)
++	$(CC) $(LDFLAGS) -o $@ $^
+ 
+ libpubnub.pc: libpubnub.pc.in
+-ifndef INCDIR
+-	$(error INCDIR is undefined; have you run make in the project root?)
+-endif
+-	sed -e 's#@LIBDIR@#$(LIBDIR)#g; s#@INCDIR@#$(INCDIR)#g' $^ >$@
++	sed -e 's#@LIBDIR@#$(libdir)#g; s#@INCDIR@#$(includedir)#g' $^ >$@
++
++install-libs:
++	-@if [ ! -d $(DESTDIR)$(libdir)       ]; then mkdir -p $(DESTDIR)$(libdir); fi
++	cp $(SHAREDLIBV) $(DESTDIR)$(libdir); \
++	echo "cp $(SHAREDLIBV) $(DESTDIR)$(libdir)"; \
++	chmod 755 $(DESTDIR)$(libdir)/$(SHAREDLIBV); \
++	echo "chmod 755 $(DESTDIR)$(libdir)/$(SHAREDLIBV)"; \
++	rm -f $(DESTDIR)$(libdir)/$(SHAREDLIB) $(DESTDIR)$(libdir)/$(SHAREDLIBM); \
++	ln -s $(SHAREDLIBV) $(DESTDIR)$(libdir)/$(SHAREDLIB); \
++	ln -s $(SHAREDLIBV) $(DESTDIR)$(libdir)/$(SHAREDLIBM); \
++
++install-pkgconfig:
++	-@if [ ! -d $(DESTDIR)$(pkgconfigdir) ]; then mkdir -p $(DESTDIR)$(pkgconfigdir); fi
++	cp libpubnub.pc $(DESTDIR)$(pkgconfigdir)
++	chmod 644 $(DESTDIR)$(pkgconfigdir)/libpubnub.pc
++
++install: install-libs install-pkgconfig
++	-@if [ ! -d $(DESTDIR)$(includedir)   ]; then mkdir -p $(DESTDIR)$(includedir); fi
++	cp pubnub.h pubnub-sync.h pubnub-libevent.h $(DESTDIR)$(includedir)
++	chmod 644 $(DESTDIR)$(includedir)/pubnub.h $(DESTDIR)$(includedir)/pubnub-sync.h $(DESTDIR)$(includedir)/pubnub-libevent.h
+ 
+ clean:
+ 	rm -f *.o libpubnub.so.1.0 libpubnub.pc
+ 
+-install:
+-ifndef INCDIR
+-	$(error INCDIR is undefined; have you run make in the project root?)
+-endif
+-	$(INSTALL) -D -m 0644 pubnub.h $(DESTDIR)$(INCDIR)/pubnub.h
+-	$(INSTALL) -D -m 0644 pubnub-sync.h $(DESTDIR)$(INCDIR)/pubnub-sync.h
+-	$(INSTALL) -D -m 0644 pubnub-libevent.h $(DESTDIR)$(INCDIR)/pubnub-libevent.h
+-	$(INSTALL) -D -m 0755 libpubnub.so.1.0 $(DESTDIR)$(LIBDIR)/libpubnub.so.1.0
+-	ln -s -f libpubnub.so.1.0 $(DESTDIR)$(LIBDIR)/libpubnub.so.1
+-	ln -s -f libpubnub.so.1.0 $(DESTDIR)$(LIBDIR)/libpubnub.so
+-	$(INSTALL) -D -m 0644 libpubnub.pc $(DESTDIR)$(LIBDIR)/pkgconfig/libpubnub.pc
+-	ldconfig
+-
+--include ../Makefile.lib
+-- 
+1.9.1
+
