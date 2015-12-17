@@ -10,8 +10,8 @@ This client example is a fairly trivial C PubNub app that connects your board to
 
 ##Sources
 #### meta-pubnub
-* URI: git://github.com/atwilc3000/meta-pubnub.git
-* URI: https://github.com/atwilc3000/meta-pubnub.git
+* URI: git://github.com/wilc3000/meta-pubnub.git
+* URI: https://github.com/wilc3000/meta-pubnub.git
 
 ##Dependencies
 #### meta-atmel
@@ -30,8 +30,8 @@ This client example is a fairly trivial C PubNub app that connects your board to
 * Branch: master
 
 #### meta-wilc
-* URI: git://github.com/atwilc3000/meta-wilc.git
-* URI: https://github.com/atwilc3000/meta-wilc.git
+* URI: git://github.com/wilc3000/meta-wilc.git
+* URI: https://github.com/wilc3000/meta-wilc.git
 
 ##Build procedure
 #####1. Clone yocto/poky git repository
@@ -78,13 +78,13 @@ cd ..
 ~~~
 #####9. Clone meta-wilc layer
 ~~~
-git clone https://github.com/atwilc3000/meta-wilc.git
+git clone https://github.com/wilc3000/meta-wilc.git
 # come back to the "poky" directory for next steps
 cd ..
 ~~~
 #####10. Clone meta-pubnub layer
 ~~~
-git clone https://github.com/atwilc3000/meta-pubnub.git
+git clone https://github.com/wilc3000/meta-pubnub.git
 # come back to the "poky" directory for next steps
 cd ..
 ~~~
